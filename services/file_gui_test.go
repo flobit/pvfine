@@ -192,9 +192,9 @@ func TestShopCategoryRealArchive(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct {
-		kind string
+		kind    string
 		firstID string
-		count int
+		count   int
 	}{
 		{"job", "0", 0},
 		{"expert job", "0", 4},
