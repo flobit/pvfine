@@ -8,8 +8,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/wailsapp/wails/v3/pkg/application"
-
 	"pvfine/internal/pvf"
 	pvfversion "pvfine/internal/version"
 )
@@ -740,109 +738,6 @@ func (s *VersionService) Remove() (*VersionStatus, error) {
 		return &status, fmt.Errorf("取消版本控制失败,部分版本文件可能仍然存在: %w", removeErr)
 	}
 	return &status, nil
-}
-
-// ExportCommitFilesDialog exports the files touched by one commit. Add/modify
-// entries use their after-state; deleted entries use their before-state so the
-// exported directory represents every file involved in that version.
-func (s *VersionService) ExportCommitFilesDialog(commitID string) (string, error) {
-	commitID = strings.TrimSpace(commitID)
-	if commitID == "" {
-		return "", errors.New("提交 ID 不能为空")
-	}
-	s.c.mu.RLock()
-	if err := s.c.ensureVersionReadyLocked(); err != nil {
-		s.c.mu.RUnlock()
-		return "", err
-	}
-	repo := s.c.versionRepo
-	if repo == nil {
-		s.c.mu.RUnlock()
-		return "", ErrVersionNotEnabled
-	}
-	if _, err := repo.GetCommit(commitID); err != nil {
-		s.c.mu.RUnlock()
-		return "", err
-	}
-	changes, err := repo.Changes(commitID)
-	s.c.mu.RUnlock()
-	if err != nil {
-		return "", err
-	}
-	if len(changes) == 0 {
-		return "", errors.New("该版本没有可导出的文件")
-	}
-
-	dir, err := application.Get().Dialog.OpenFile().
-		CanChooseFiles(false).
-		CanChooseDirectories(true).
-		CanCreateDirectories(true).
-		SetTitle("选择版本文件导出目录").
-		PromptForSingleSelection()
-	if err != nil {
-		return "", err
-	}
-	if dir == "" {
-		return "", nil
-	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", err
-	}
-
-	s.c.mu.RLock()
-	defer s.c.mu.RUnlock()
-	if s.c.versionRepo != repo {
-		return "", ErrVersionNotEnabled
-	}
-	base := s.c.versionBaseArchive
-	if base == nil {
-		base, err = pvf.Open(repo.BasePath())
-		if err != nil {
-			return "", err
-		}
-	}
-	seenDestinations := make(map[string]struct{}, len(changes))
-	exported := 0
-	for _, change := range changes {
-		hash := change.AfterHash
-		dataType := change.AfterType
-		path := change.DisplayPath
-		if hash == "" {
-			hash = change.BeforeHash
-			dataType = change.BeforeType
-			if path == "" {
-				path = change.OldDisplayPath
-			}
-		}
-		if hash == "" || path == "" {
-			continue
-		}
-		content, err := readVersionContent(repo, base, pvfversion.Entry{
-			Path: path, DataType: dataType, Hash: hash,
-		})
-		if err != nil {
-			return "", fmt.Errorf("读取版本文件 %q 失败: %w", path, err)
-		}
-		destination, err := safeExportPath(dir, path)
-		if err != nil {
-			return "", err
-		}
-		if _, exists := seenDestinations[destination]; exists {
-			return "", fmt.Errorf("版本文件导出路径冲突: %s", path)
-		}
-		seenDestinations[destination] = struct{}{}
-		if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
-			return "", err
-		}
-		if err := os.WriteFile(destination, content.Raw, 0o644); err != nil {
-			return "", err
-		}
-		exported++
-	}
-	if exported == 0 {
-		return "", errors.New("该版本没有可导出的文件")
-	}
-	return dir, nil
 }
 
 // Undo reverses the most recent uncommitted mutation as one atomic operation.

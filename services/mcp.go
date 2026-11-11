@@ -14,8 +14,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/wailsapp/wails/v3/pkg/application"
 	"pvfine/internal/mcpserver"
+	scriptengine "pvfine/internal/script"
 )
 
 const mcpTTL = 10 * time.Minute
@@ -90,8 +90,10 @@ type MCPService struct {
 func NewMCPService(c *core, a *ArchiveService, e *EditorService, s *ScriptService, x *ExportService, declarations ...string) *MCPService {
 	root, err := os.UserConfigDir()
 	service := newMCPService(c, a, e, s, x, filepath.Join(root, "pvfine", "mcp.json"))
-	if len(declarations) > 0 {
+	if len(declarations) > 0 && declarations[0] != "" {
 		service.apiDeclaration = declarations[0]
+	} else {
+		service.apiDeclaration = scriptengine.APIDeclaration
 	}
 	if err != nil {
 		service.lastError = "无法确定 MCP 配置目录"
@@ -99,7 +101,20 @@ func NewMCPService(c *core, a *ArchiveService, e *EditorService, s *ScriptServic
 	return service
 }
 func newMCPService(c *core, a *ArchiveService, e *EditorService, s *ScriptService, x *ExportService, path string) *MCPService {
-	return &MCPService{c: c, archive: a, editor: e, script: s, export: x, configPath: path, config: mcpConfig{Port: 19245}, tasks: map[string]*MCPTask{}, requests: map[string]mcpRequestRecord{}, windows: map[string]mcpWindow{}, imports: map[string]*mcpImportPlan{}}
+	return &MCPService{
+		apiDeclaration: scriptengine.APIDeclaration,
+		c:              c,
+		archive:        a,
+		editor:         e,
+		script:         s,
+		export:         x,
+		configPath:     path,
+		config:         mcpConfig{Port: 19245},
+		tasks:          map[string]*MCPTask{},
+		requests:       map[string]mcpRequestRecord{},
+		windows:        map[string]mcpWindow{},
+		imports:        map[string]*mcpImportPlan{},
+	}
 }
 func mcpID() string {
 	var b [16]byte
@@ -108,20 +123,20 @@ func mcpID() string {
 	}
 	return hex.EncodeToString(b[:])
 }
-func (s *MCPService) ServiceStartup(ctx context.Context, _ application.ServiceOptions) error {
-	if app := application.Get(); app != nil {
-		for _, name := range []string{"script:progress", "archive:save-progress"} {
-			app.Event.On(name, func(event *application.CustomEvent) {
-				s.mu.Lock()
-				defer s.mu.Unlock()
-				for _, task := range s.tasks {
-					if task.Status == "running" {
-						task.Progress = event.Data
-					}
-				}
-			})
+func (s *MCPService) updateRunningTaskProgress(data any) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, task := range s.tasks {
+		if task.Status == "running" {
+			task.Progress = data
 		}
 	}
+}
+
+// Startup subscribes to runtime progress events when a GUI host is present
+// and auto-starts the HTTP MCP endpoint if enabled in persisted config.
+func (s *MCPService) Startup() error {
+	subscribeMCPProgressEvents(s)
 
 	data, err := os.ReadFile(s.configPath)
 	if err == nil {
@@ -172,37 +187,78 @@ func (s *MCPService) Status() MCPStatus {
 	}
 	return result
 }
-func (s *MCPService) Configure(enabled bool, port int) (MCPStatus, error) {
-	s.configMu.Lock()
-	defer s.configMu.Unlock()
-	if port < 1024 || port > 65535 {
-		return s.Status(), fmt.Errorf("端口需在 1024-65535 之间")
-	}
+
+// Tools returns the full MCP tool definitions for external transports (e.g. stdio).
+func (s *MCPService) Tools() []mcpserver.Tool {
+	return s.tools()
+}
+
+func (s *MCPService) bindAndServeHTTP(addr string) (int, error) {
 	s.mu.Lock()
 	busy := s.active
 	s.mu.Unlock()
 	if busy {
-		return s.Status(), fmt.Errorf("TASK_BUSY: 请等待当前任务完成")
+		return 0, fmt.Errorf("TASK_BUSY: 请等待当前任务完成")
 	}
 	_ = s.stop()
 	s.mu.Lock()
 	s.tasks = map[string]*MCPTask{}
 	s.requests = map[string]mcpRequestRecord{}
 	s.mu.Unlock()
+
+	listener, err := net.Listen("tcp4", addr)
+	if err != nil {
+		return 0, err
+	}
+	actualPort := listener.Addr().(*net.TCPAddr).Port
+	handler := mcpserver.Handler(s.tools())
+	s.mu.Lock()
+	s.config = mcpConfig{Enabled: true, Port: actualPort}
+	s.lastError = ""
+	s.server = mcpserver.Serve(listener, handler)
+	s.mu.Unlock()
+	return actualPort, nil
+}
+
+// ServeHTTPAddr starts the loopback HTTP MCP server without writing configPath.
+// Intended for standalone headless MCP binaries.
+func (s *MCPService) ServeHTTPAddr(addr string) (string, error) {
+	s.configMu.Lock()
+	defer s.configMu.Unlock()
+	port, err := s.bindAndServeHTTP(addr)
+	if err != nil {
+		return "", fmt.Errorf("MCP 端口不可用: %w", err)
+	}
+	return fmt.Sprintf("http://127.0.0.1:%d/mcp", port), nil
+}
+
+func (s *MCPService) Configure(enabled bool, port int) (MCPStatus, error) {
+	s.configMu.Lock()
+	defer s.configMu.Unlock()
+	if port < 1024 || port > 65535 {
+		return s.Status(), fmt.Errorf("端口需在 1024-65535 之间")
+	}
 	cfg := mcpConfig{Enabled: enabled, Port: port}
 	if enabled {
-		listener, err := net.Listen("tcp4", fmt.Sprintf("127.0.0.1:%d", port))
+		actualPort, err := s.bindAndServeHTTP(fmt.Sprintf("127.0.0.1:%d", port))
 		if err != nil {
+			if err.Error() == "TASK_BUSY: 请等待当前任务完成" {
+				return s.Status(), err
+			}
 			return s.Status(), fmt.Errorf("MCP 端口不可用")
 		}
-		handler := mcpserver.Handler(s.tools())
-		s.mu.Lock()
-		s.config = cfg
-		s.lastError = ""
-		s.server = mcpserver.Serve(listener, handler)
-		s.mu.Unlock()
+		cfg.Port = actualPort
 	} else {
 		s.mu.Lock()
+		busy := s.active
+		s.mu.Unlock()
+		if busy {
+			return s.Status(), fmt.Errorf("TASK_BUSY: 请等待当前任务完成")
+		}
+		_ = s.stop()
+		s.mu.Lock()
+		s.tasks = map[string]*MCPTask{}
+		s.requests = map[string]mcpRequestRecord{}
 		s.config = cfg
 		s.lastError = ""
 		s.mu.Unlock()
@@ -258,11 +314,9 @@ func (s *MCPService) prepareUI(ctx context.Context, id string) error {
 	s.mu.Lock()
 	expected := map[string]bool{}
 	for key, w := range s.windows {
-		if app := application.Get(); app != nil {
-			if _, exists := app.Window.GetByName(key); !exists {
-				delete(s.windows, key)
-				continue
-			}
+		if !wailsWindowExists(key) {
+			delete(s.windows, key)
+			continue
 		}
 		if time.Since(w.seen) < 12*time.Second {
 			expected[key] = true
@@ -271,8 +325,8 @@ func (s *MCPService) prepareUI(ctx context.Context, id string) error {
 			return fmt.Errorf("UI_NOT_READY: 窗口状态已过期")
 		}
 	}
-	// Headless service tests have no Wails runtime. A live app requires its main window.
-	if application.Get() != nil && !expected["main"] {
+	// Headless runs have no Wails runtime. A live app requires its main window.
+	if hasLiveWailsRuntime() && !expected["main"] {
 		s.mu.Unlock()
 		return fmt.Errorf("UI_NOT_READY: 等待界面就绪")
 	}

@@ -12,8 +12,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/wailsapp/wails/v3/pkg/application"
-
 	"pvfine/internal/pvf"
 	pvfversion "pvfine/internal/version"
 )
@@ -372,26 +370,6 @@ func (s *AutosaveService) DropForWorkspace() {
 	}
 	s.c.mu.RUnlock()
 	s.DropForSource(sourcePath)
-}
-
-// ChooseCachePath asks the user for a backup file location.
-func (s *AutosaveService) ChooseCachePath() (string, error) {
-	if s == nil {
-		return "", errors.New("定时缓存服务不可用")
-	}
-	name := "autosave.pvf"
-	if current, err := s.cachePath(); err == nil && current != "" {
-		name = filepath.Base(current)
-	}
-	path, err := application.Get().Dialog.SaveFile().
-		SetFilename(name).
-		AddFilter("PVF 备份缓存", "*.pvf").
-		SetMessage("选择定时缓存文件").
-		PromptForSingleSelection()
-	if err != nil {
-		return "", err
-	}
-	return path, nil // 空字符串表示用户取消
 }
 
 // replayBackup applies the backed-up contents on top of the freshly opened

@@ -21,7 +21,8 @@ type Tool struct {
 	Call              func(context.Context, json.RawMessage) (any, error)
 }
 
-func Handler(definitions []Tool) http.Handler {
+// NewServer creates an MCP server with all validated tool definitions registered.
+func NewServer(definitions []Tool) *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{Name: "pvfine", Version: "1.0.0"}, nil)
 	for _, definition := range definitions {
 		d := definition
@@ -48,6 +49,16 @@ func Handler(definitions []Tool) http.Handler {
 			return result(value, callErr), nil
 		})
 	}
+	return server
+}
+
+// ServeStdio serves all MCP tools over stdin/stdout until the client disconnects or ctx is cancelled.
+func ServeStdio(ctx context.Context, definitions []Tool) error {
+	return NewServer(definitions).Run(ctx, &mcp.StdioTransport{})
+}
+
+func Handler(definitions []Tool) http.Handler {
+	server := NewServer(definitions)
 	transport := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/mcp" {

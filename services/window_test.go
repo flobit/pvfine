@@ -1,3 +1,5 @@
+//go:build !mcp_only
+
 package services
 
 import (

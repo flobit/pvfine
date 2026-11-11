@@ -6,7 +6,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/wailsapp/wails/v3/pkg/application"
 	modpkg "pvfine/internal/mod"
 )
 
@@ -37,23 +36,6 @@ func nextModVersion(version string) (string, string) {
 		return version, "递增后的版本号超过长度限制，请手动修改版本号"
 	}
 	return result, ""
-}
-
-// SelectMergeDialog reads metadata only after a source has been selected and validated.
-func (s *ExportService) SelectMergeDialog(formatID string) (*ExportMergeSource, error) {
-	f, err := s.registry.Get(formatID)
-	if err != nil {
-		return nil, err
-	}
-	if f.Reader == nil {
-		return nil, fmt.Errorf("该 mod 格式不支持读取")
-	}
-	source, err := application.Get().Dialog.OpenFile().CanChooseFiles(formatID == modpkg.CN115Format).
-		CanChooseDirectories(true).SetTitle("选择要合并的同格式 MOD 目录或 ZIP / .dnfmod").PromptForSingleSelection()
-	if err != nil || source == "" {
-		return nil, err
-	}
-	return s.mergeSourceMetadata(source, formatID)
 }
 
 func (s *ExportService) mergeSourceMetadata(source, formatID string) (*ExportMergeSource, error) {

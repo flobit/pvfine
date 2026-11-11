@@ -9,8 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wailsapp/wails/v3/pkg/application"
-
 	"pvfine/internal/pvf"
 )
 
@@ -386,106 +384,9 @@ func backupSourceFileWithProgress(sourcePath string, progress pvf.SaveProgressFu
 	return nil
 }
 
-// SaveAsDialog 弹出保存对话框并另存为新 PVF。返回保存路径。
-func (s *EditorService) SaveAsDialog() (string, error) {
-	finishTask := s.c.archiveTasks.begin()
-	defer finishTask()
-	s.c.mu.RLock()
-	a := s.c.archive
-	if a == nil {
-		s.c.mu.RUnlock()
-		return "", ErrNoArchive
-	}
-	s.c.mu.RUnlock()
-	defName := "Script_new.pvf"
-	if src := a.SourcePath(); src != "" {
-		defName = filepath.Base(src)
-	}
-	path, err := application.Get().Dialog.SaveFile().
-		SetFilename(defName).
-		AddFilter("PVF 归档", "*.pvf").
-		SetMessage("另存为 PVF").
-		PromptForSingleSelection()
-	if err != nil {
-		return "", err
-	}
-	if path == "" {
-		return "", nil // 用户取消
-	}
-	s.c.mu.RLock()
-	sameArchive := s.c.archive == a
-	s.c.mu.RUnlock()
-	if !sameArchive {
-		return "", ErrNoArchive
-	}
-	return s.saveCopy(path, true, "")
-}
-
 type exportSelection struct {
 	index int32
 	path  string
-}
-
-// ExportFilesDialog 将选中的文件或目录导出到目标目录,文件内容使用渲染后的 UTF-8 文本。
-// 目录会递归展开,并保留归档内的相对路径。
-func (s *EditorService) ExportFilesDialog(scopes []string) (string, error) {
-	finishTask := s.c.archiveTasks.begin()
-	defer finishTask()
-	s.c.mu.RLock()
-	a := s.c.archive
-	if a == nil {
-		s.c.mu.RUnlock()
-		return "", ErrNoArchive
-	}
-	var selections []exportSelection
-	if s.c.diskIndex != nil {
-		selections = collectDiskExportSelections(a, s.c.diskIndex, scopes)
-	} else {
-		selections = collectExportSelections(a, s.c.sortedPaths, scopes)
-	}
-	s.c.mu.RUnlock()
-	if len(selections) == 0 {
-		return "", fmt.Errorf("没有可导出的文件")
-	}
-	dir, err := application.Get().Dialog.OpenFile().
-		CanChooseFiles(false).
-		CanChooseDirectories(true).
-		CanCreateDirectories(true).
-		SetTitle("选择导出目标目录").
-		PromptForSingleSelection()
-	if err != nil {
-		return "", err
-	}
-	if dir == "" {
-		return "", nil
-	}
-
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", err
-	}
-
-	s.c.mu.RLock()
-	defer s.c.mu.RUnlock()
-	if s.c.archive != a {
-		return "", ErrNoArchive
-	}
-	for _, selection := range selections {
-		text, err := a.Text(selection.index)
-		if err != nil {
-			return "", fmt.Errorf("渲染 %q 失败: %w", selection.path, err)
-		}
-		dst, err := safeExportPath(dir, selection.path)
-		if err != nil {
-			return "", err
-		}
-		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-			return "", err
-		}
-		if err := os.WriteFile(dst, []byte(text), 0o644); err != nil {
-			return "", err
-		}
-	}
-	return dir, nil
 }
 
 func collectDiskExportSelections(a *pvf.Archive, index *sqliteArchiveIndex, scopes []string) []exportSelection {
@@ -595,66 +496,6 @@ func sanitizeExportName(name string) string {
 			return r
 		}
 	}, name)
-}
-
-// UnpackDialog 选择目录后,在后台协程把整包解包到该目录。
-// 进度通过事件 "unpack:progress" {done,total} 推送,结束发 "unpack:done"。
-func (s *EditorService) UnpackDialog() (bool, error) {
-	if !s.c.unpackRunning.CompareAndSwap(false, true) {
-		return false, fmt.Errorf("解包正在进行中")
-	}
-	s.c.mu.RLock()
-	a := s.c.archive
-	s.c.mu.RUnlock()
-	if a == nil {
-		s.c.unpackRunning.Store(false)
-		return false, ErrNoArchive
-	}
-	dir, err := application.Get().Dialog.OpenFile().
-		CanChooseFiles(false).
-		CanChooseDirectories(true).
-		CanCreateDirectories(true).
-		SetTitle("选择解包目标目录").
-		PromptForSingleSelection()
-	if err != nil {
-		s.c.unpackRunning.Store(false)
-		return false, err
-	}
-	if dir == "" {
-		s.c.unpackRunning.Store(false)
-		return false, nil // 用户取消
-	}
-
-	finishTask := s.c.archiveTasks.begin()
-	s.c.mu.Lock()
-	if s.c.archive != a || s.c.unpackCancel.Load() {
-		s.c.mu.Unlock()
-		finishTask()
-		s.c.unpackRunning.Store(false)
-		return false, nil
-	}
-	s.c.unpackCancel.Store(false)
-	s.c.mu.Unlock()
-	go func() {
-		defer finishTask()
-		defer s.c.unpackRunning.Store(false)
-		emit := emitEvent
-		total := int(a.FileCount())
-		progress := func(done, tot int) { emit("unpack:progress", map[string]int{"done": done, "total": tot}) }
-		cancel := func() bool { return s.c.unpackCancel.Load() }
-
-		err := a.ExtractTo(dir, progress, cancel)
-		if err == pvf.ErrCancelled {
-			emit("unpack:done", map[string]any{"ok": false, "message": "解包已取消", "dir": dir})
-			return
-		}
-		if err != nil {
-			emit("unpack:done", map[string]any{"ok": false, "message": "解包失败: " + err.Error(), "dir": dir})
-			return
-		}
-		emit("unpack:done", map[string]any{"ok": true, "message": fmt.Sprintf("已解包 %d 个文件到 %s", total, dir), "dir": dir})
-	}()
-	return true, nil
 }
 
 // CancelUnpack 请求中止进行中的解包。

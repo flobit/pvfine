@@ -15,8 +15,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/wailsapp/wails/v3/pkg/application"
-
 	annotationrules "pvfine/internal/annotations"
 	"pvfine/internal/pvf"
 	renderingrules "pvfine/internal/rendering"
@@ -31,9 +29,7 @@ func emitEvent(name string, data ...any) {
 		payload = data[0]
 	}
 	recordLogEvent(name, payload)
-	if app := application.Get(); app != nil {
-		app.Event.Emit(name, data...)
-	}
+	emitWailsEvent(name, data...)
 }
 
 var (

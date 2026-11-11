@@ -11,8 +11,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/wailsapp/wails/v3/pkg/application"
-
 	modpkg "pvfine/internal/mod"
 	"pvfine/internal/pvf"
 	pvfversion "pvfine/internal/version"
@@ -353,38 +351,6 @@ func (s *ExportService) validLocked(p *exportPlan) bool {
 		p.archive == s.c.archive && p.repo == s.c.versionRepo &&
 		p.revision == s.c.batchRevision && p.generation == s.c.archiveGeneration &&
 		p.loadID == s.c.versionLoadID && p.headID == s.c.versionHead.ID
-}
-
-// ExecuteDialog picks the parent directory only after the frontend confirms.
-func (s *ExportService) ExecuteDialog(id string) (string, error) {
-	return s.ExecuteSelectionDialog(id, nil)
-}
-
-// ExecuteSelectionDialog applies exclusions to the frozen preview. Dependencies
-// are not resolved again, so an explicitly excluded file cannot reappear.
-func (s *ExportService) ExecuteSelectionDialog(id string, excluded []string) (string, error) {
-	s.mu.Lock()
-	s.c.mu.RLock()
-	valid := s.plan != nil && s.plan.preview.ID == id && s.validLocked(s.plan)
-	var selectionErr error
-	if valid {
-		_, selectionErr = s.selectedPlan(s.plan, excluded)
-	}
-	s.c.mu.RUnlock()
-	s.mu.Unlock()
-	if !valid {
-		return "", ErrExportStale
-	}
-	if selectionErr != nil {
-		return "", selectionErr
-	}
-	dir, err := application.Get().Dialog.OpenFile().
-		CanChooseFiles(false).CanChooseDirectories(true).CanCreateDirectories(true).
-		SetTitle("选择导出目标目录").PromptForSingleSelection()
-	if err != nil || dir == "" {
-		return "", err
-	}
-	return s.executeSelectedTo(id, dir, excluded)
 }
 
 func (s *ExportService) executeTo(id, dir string) (string, error) {

@@ -10,8 +10,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/wailsapp/wails/v3/pkg/application"
-
 	appconfig "pvfine/config"
 )
 
@@ -264,59 +262,6 @@ func (s *BookmarkService) SaveBookmarks(document BookmarkDocument) error {
 	}
 	s.builtin = builtin
 	return nil
-}
-
-// ImportBookmarkBookDialog opens and parses one portable bookmark book.
-func (s *BookmarkService) ImportBookmarkBookDialog() (*BookmarkBookFile, error) {
-	paths, err := application.Get().Dialog.OpenFile().
-		CanChooseFiles(true).
-		CanChooseDirectories(false).
-		AddFilter("书签簿 JSON", "*.json").
-		SetTitle("导入书签簿").
-		PromptForSingleSelection()
-	if err != nil {
-		return nil, err
-	}
-	if paths == "" {
-		return nil, nil
-	}
-	data, err := os.ReadFile(paths)
-	if err != nil {
-		return nil, fmt.Errorf("读取书签簿导入文件失败: %w", err)
-	}
-	book, err := parseBookmarkBookFile(data)
-	if err != nil {
-		return nil, err
-	}
-	return &book, nil
-}
-
-// ExportBookmarkBookDialog saves one portable bookmark book selected by the
-// frontend. Built-in books are intentionally exportable.
-func (s *BookmarkService) ExportBookmarkBookDialog(book BookmarkBookFile) (string, error) {
-	if err := normalizeBookmarkBookFile(&book); err != nil {
-		return "", err
-	}
-	filename := safeBookmarkFilename(book.Name) + ".json"
-	path, err := application.Get().Dialog.SaveFile().
-		SetFilename(filename).
-		AddFilter("书签簿 JSON", "*.json").
-		SetMessage("导出书签簿").
-		PromptForSingleSelection()
-	if err != nil {
-		return "", err
-	}
-	if path == "" {
-		return "", nil
-	}
-	data, err := marshalBookmarkJSON(book)
-	if err != nil {
-		return "", err
-	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
-		return "", fmt.Errorf("写入书签簿导出文件失败: %w", err)
-	}
-	return path, nil
 }
 
 func parseBuiltinBookmarkBook(data []byte) (BookmarkBook, error) {

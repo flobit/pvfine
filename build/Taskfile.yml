@@ -273,6 +273,33 @@ tasks:
     cmds:
       - '"./{{.BIN_DIR}}/{{.APP_NAME}}-server{{exeExt}}"'
 
+  build:mcp:
+    summary: Builds the standalone headless MCP-only binary (pure Go, no GUI/frontend required)
+    desc: |
+      Builds bin/pvfine-mcp (or bin/pvfine-mcp.exe when target GOOS=windows) without
+      Wails, WebView, GTK/WebKit, or frontend build steps.
+
+      Usage: task build:mcp [GOOS=linux|windows|darwin] [DEV=true] [EXTRA_TAGS=tag1,tag2]
+        DEV=true    include debug/info logs and skip -ldflags="-w -s"
+    env:
+      CGO_ENABLED: "0"
+      GOOS: '{{.TARGET_OS}}'
+    cmds:
+      - go build {{.BUILD_FLAGS}} -o "{{.BIN_DIR}}/{{.APP_NAME}}-mcp{{.MCP_EXT}}" ./cmd/pvfine-mcp
+    vars:
+      TARGET_OS: '{{.GOOS | default OS}}'
+      MCP_EXT: '{{if eq .TARGET_OS "windows"}}.exe{{end}}'
+      BUILD_FLAGS: '-tags mcp_only{{if eq .DEV "true"}}{{if .EXTRA_TAGS}},{{.EXTRA_TAGS}}{{end}} -buildvcs=false{{else}},production{{if .EXTRA_TAGS}},{{.EXTRA_TAGS}}{{end}} -trimpath -buildvcs=false -ldflags="-w -s"{{end}}'
+
+  run:mcp:
+    summary: Builds and runs the standalone MCP server
+    deps:
+      - task: build:mcp
+        vars:
+          GOOS: '{{.GOOS}}'
+    cmds:
+      - '"./{{.BIN_DIR}}/{{.APP_NAME}}-mcp{{if eq (.GOOS | default OS) "windows"}}.exe{{end}}" {{.CLI_ARGS}}'
+
   build:docker:
     summary: Builds a Docker image for server mode deployment
     desc: |

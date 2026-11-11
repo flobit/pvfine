@@ -9,8 +9,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 // Leases cover the interval before an index is attached to core as well as
@@ -67,7 +65,8 @@ func leasedCachePathsLocked() []string {
 	return paths
 }
 
-func (s *CacheService) ServiceStartup(ctx context.Context, _ application.ServiceOptions) error {
+// StartMaintenance launches background cache budget cleanup loops.
+func (s *CacheService) StartMaintenance(ctx context.Context) error {
 	s.cancel, s.done = nil, make(chan struct{})
 	ctx, s.cancel = context.WithCancel(ctx)
 	go func() {

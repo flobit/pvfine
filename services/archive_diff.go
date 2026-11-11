@@ -12,7 +12,6 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/wailsapp/wails/v3/pkg/application"
 	"pvfine/internal/pvf"
 	pvfversion "pvfine/internal/version"
 )
@@ -93,11 +92,6 @@ func NewArchiveDiffService(c *core) *ArchiveDiffService {
 	s := &ArchiveDiffService{c: c}
 	c.archiveDiff = s
 	return s
-}
-
-func (s *ArchiveDiffService) SelectArchive() (string, error) {
-	return application.Get().Dialog.OpenFile().CanChooseFiles(true).CanChooseDirectories(false).
-		AddFilter("PVF 归档", "*.pvf").SetTitle("选择对比归档").PromptForSingleSelection()
 }
 
 func (s *ArchiveDiffService) Release() {

@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"github.com/wailsapp/wails/v3/pkg/application"
 	"os"
 	"path/filepath"
 	"testing"
@@ -180,7 +179,7 @@ func TestCacheBudgetAutomaticStartupAndLeaseRelease(t *testing.T) {
 	release := holdCachePaths(live)
 	defer release()
 	service := newCacheServiceWithRoot(NewCore(), settings, root)
-	if err := service.ServiceStartup(context.Background(), application.ServiceOptions{}); err != nil {
+	if err := service.StartMaintenance(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	defer service.ServiceShutdown()

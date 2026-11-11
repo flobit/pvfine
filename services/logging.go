@@ -9,8 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/wailsapp/wails/v3/pkg/application"
-
 	"pvfine/internal/buildmode"
 	"pvfine/internal/pvf"
 )
@@ -175,18 +173,6 @@ func LogServiceError(err error) []byte {
 		log.Printf("[ERR] %v", err)
 	}
 	return nil
-}
-
-// ObserveLogEvents makes startup history available after the frontend subscribes.
-func ObserveLogEvents(app *application.App) {
-	app.Event.On("app:logs-request", func(*application.CustomEvent) {
-		_ = app.Event.Emit("app:logs", applicationLogs.snapshot())
-	})
-	// application.New logs before its event processor is initialized. Only
-	// enable live forwarding after New returns; startup logs stay in history.
-	applicationLogs.setEmitter(func(entry appLogEntry) {
-		_ = app.Event.Emit("app:log", entry)
-	})
 }
 
 // Record before emitting: Wails Go event listeners run asynchronously and may

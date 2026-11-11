@@ -6,7 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/wailsapp/wails/v3/pkg/application"
 	modpkg "pvfine/internal/mod"
 	"pvfine/internal/pvf"
 	pvfversion "pvfine/internal/version"
@@ -81,17 +80,6 @@ func (s *ModImportService) readableFormat(id string) (modpkg.Format, error) {
 		return modpkg.Format{}, fmt.Errorf("mod 格式不支持导入: %s", format.Descriptor.Name)
 	}
 	return format, nil
-}
-
-func (s *ModImportService) PrepareDialog(formatID string) (*ModImportPreview, error) {
-	if _, err := s.readableFormat(formatID); err != nil {
-		return nil, err
-	}
-	dir, err := application.Get().Dialog.OpenFile().CanChooseFiles(formatID == modpkg.CN115Format).CanChooseDirectories(true).SetTitle("选择 mod 目录或 ZIP / .dnfmod").PromptForSingleSelection()
-	if err != nil || dir == "" {
-		return nil, err
-	}
-	return s.Prepare(dir, formatID)
 }
 
 func (s *ModImportService) Prepare(dir, formatID string) (*ModImportPreview, error) {

@@ -15,8 +15,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/wailsapp/wails/v3/pkg/application"
-
 	"pvfine/internal/npk"
 )
 
@@ -177,38 +175,6 @@ func (s *ImageService) Initialize() ImageIndexStatus {
 	}
 	s.startBuild(directory, generation)
 	return s.IndexStatus()
-}
-
-// SelectNPKDirectory opens the native directory chooser, persists the
-// selected path and starts a new asynchronous index generation.
-func (s *ImageService) SelectNPKDirectory() (ImageIndexStatus, error) {
-	app := application.Get()
-	if app == nil {
-		return s.IndexStatus(), errors.New("当前运行环境不支持目录选择")
-	}
-	path, err := app.Dialog.OpenFile().
-		CanChooseFiles(false).
-		CanChooseDirectories(true).
-		CanCreateDirectories(false).
-		SetTitle("选择 NPK 目录").
-		PromptForSingleSelection()
-	if err != nil {
-		return s.IndexStatus(), err
-	}
-	if strings.TrimSpace(path) == "" {
-		return s.IndexStatus(), nil
-	}
-	directory, err := canonicalImageDirectory(path)
-	if err != nil {
-		return s.IndexStatus(), err
-	}
-	if s.settings != nil {
-		if _, err := s.settings.UpdateNPKDirectory(directory); err != nil {
-			return s.IndexStatus(), err
-		}
-	}
-	s.switchDirectory(directory)
-	return s.IndexStatus(), nil
 }
 
 // RebuildIndex starts a manual rebuild. Existing image data remains available

@@ -8,8 +8,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/wailsapp/wails/v3/pkg/application"
-
 	"pvfine/internal/pvf"
 	pvfversion "pvfine/internal/version"
 )
@@ -63,27 +61,6 @@ type importFile struct {
 type importSelection struct {
 	path  string
 	isDir bool
-}
-
-// ImportFilesDialog opens a native multi-selection picker and imports the
-// selected files or directories into targetDir.
-func (s *ArchiveService) ImportFilesDialog(targetDir, mode string) (*ImportResult, error) {
-	paths, err := s.SelectImportFilesDialog()
-	if err != nil || len(paths) == 0 {
-		return nil, err
-	}
-	return s.ImportFiles(paths, targetDir, mode)
-}
-
-// SelectImportFilesDialog opens the native multi-selection picker without
-// changing the current archive. The returned paths can be previewed first.
-func (s *ArchiveService) SelectImportFilesDialog() ([]string, error) {
-	return application.Get().Dialog.OpenFile().
-		CanChooseFiles(true).
-		CanChooseDirectories(true).
-		AddFilter("所有文件", "*").
-		SetTitle("导入文件").
-		PromptForMultipleSelection()
 }
 
 // PreviewImport validates and maps sourcePaths without modifying the live

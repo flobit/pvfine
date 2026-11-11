@@ -74,3 +74,18 @@ tasks:
     summary: Builds and runs the Docker image
     cmds:
       - task: common:run:docker
+
+  build:mcp:
+    summary: Builds the standalone headless MCP-only binary (pure Go, no Wails)
+    cmds:
+      - task: common:build:mcp
+        vars:
+          GOOS: '{{.GOOS}}'
+
+  run:mcp:
+    summary: Builds and runs the standalone MCP-only binary
+    cmds:
+      - task: common:run:mcp
+        vars:
+          GOOS: '{{.GOOS}}'
+          CLI_ARGS: '{{.CLI_ARGS}}'

@@ -1,0 +1,267 @@
+/**
+ * JavaScript script workspace API exposed by pvfine at runtime.
+ *
+ * These declarations are intentionally independent from the generated Wails
+ * DTO bindings: they describe the objects available inside a sandboxed
+ * `.pvf.js` script.
+ */
+export type SectionPath = string | readonly string[];
+export type PVFScalar = number | string;
+
+export type PVFTokenType =
+  | "integer"
+  | "float"
+  | "string"
+  | "quoted"
+  | "block5"
+  | "block7"
+  | "block8"
+  | "block10";
+
+export interface PVFValue {
+  readonly type: PVFTokenType;
+  readonly value: PVFScalar;
+  readonly pool?: "utf8" | "utf16";
+}
+
+export type PVFValueInput = PVFScalar | PVFValue;
+
+export type PVFParseWarningCode =
+  | "orphan-close"
+  | "missing-close"
+  | "mismatched-close";
+
+export interface PVFParseWarning {
+  readonly code: PVFParseWarningCode;
+  readonly message: string;
+  /** Zero-based token index; points one past the last token for EOF warnings. */
+  readonly tokenIndex: number;
+  readonly path: readonly string[];
+}
+
+export interface PVFSection {
+  readonly name: string;
+  readonly path: readonly string[];
+  readonly occurrence: number;
+  readonly hasEndTag: boolean;
+
+  values(): PVFValue[];
+  children(): PVFSection[];
+  /** 移除全部同名直接子 section（含子树），返回移除数量。 */
+  removeChildren(children_name: string): number;
+
+  get(index?: number): PVFScalar | undefined;
+  getValue(index?: number): PVFValue | undefined;
+  /** 解析字符串引用；旧式文本或无法解析的引用原样返回，缺失值返回 undefined。 */
+  getOriStrValue(index?: number): string | undefined;
+  /** 始终写入旧式 type 6 文本，不注册字符串表引用。 */
+  setStrValue(text: string, index?: number): void;
+  /** 支持字符串引用的分页归档自动注册为 type 8 引用，其它格式写入 type 6；精确值对象不转换。 */
+  set(value: PVFValueInput, index?: number): void;
+  setValues(values: PVFValueInput[]): void;
+  append(value: PVFValueInput): void;
+  appendSection(
+    name: string,
+    values?: PVFValueInput[],
+    options?: { endTag?: boolean },
+  ): PVFSection;
+  delete(): void;
+}
+
+export interface PVFDocument {
+  sections(path: SectionPath): PVFSection[];
+  section(path: SectionPath, occurrence?: number): PVFSection | null;
+  warnings(): PVFParseWarning[];
+
+  get(
+    path: SectionPath,
+    occurrence?: number,
+    valueIndex?: number,
+  ): PVFScalar | undefined;
+  getValue(
+    path: SectionPath,
+    occurrence?: number,
+    valueIndex?: number,
+  ): PVFValue | undefined;
+  /** 解析字符串引用；旧式文本或无法解析的引用原样返回，非字符串值报错。 */
+  getOriStrValue(
+    path: SectionPath,
+    occurrence?: number,
+    valueIndex?: number,
+  ): string | undefined;
+  /** 始终写入旧式 type 6 文本，选项与 set 相同，不注册字符串表引用。 */
+  setStrValue(
+    path: SectionPath,
+    text: string,
+    options?: {
+      occurrence?: number;
+      valueIndex?: number;
+      create?: boolean;
+      endTag?: boolean;
+    },
+  ): boolean;
+  /** 支持字符串引用的分页归档自动注册为 type 8 引用，其它格式写入 type 6；精确值对象不转换。 */
+  set(
+    path: SectionPath,
+    value: PVFValueInput,
+    options?: {
+      occurrence?: number;
+      valueIndex?: number;
+      create?: boolean;
+      endTag?: boolean;
+    },
+  ): boolean;
+  delete(path: SectionPath, occurrence?: number): boolean;
+  appendSection(
+    name: string,
+    values?: PVFValueInput[],
+    options?: { endTag?: boolean },
+  ): PVFSection;
+}
+
+/** 按等级计算；current 为当前成功率（百分比）或道具数量。 */
+export type UpgradeCalculation = number | ((level: number, current: number) => number);
+export interface UpgradeEditOptions {
+  equipment?: "weapon" | "armor";
+  fromLevel?: number;
+  toLevel?: number;
+  successRate?: UpgradeCalculation;
+  costCount?: UpgradeCalculation;
+}
+
+export interface PVFFile {
+  readonly index: number;
+  readonly path: string;
+  readonly type: number;
+  readonly size: number;
+
+  text(): string;
+  setText(text: string): void;
+  /** 强化/增幅：校验所有结果后统一写入事务，返回范围内等级数量。 */
+  editUpgrade(options: UpgradeEditOptions): number;
+  parse(): PVFDocument;
+  write(document: PVFDocument): void;
+}
+
+export interface PVFTypes {
+  readonly script: number;
+  readonly unicode: number;
+}
+
+/** 新建文件时可用的数据类型：pvf.types.script 或 pvf.types.unicode。 */
+export type PVFDataType = number;
+
+/** .lst 列表的 id 到路径映射。 */
+export type PVFListPairMap = Record<string, string>;
+
+/** id 参数的写法：字符串或整数，内部统一按字符串处理。 */
+export type PVFListID = string | number;
+
+/**
+ * 一个 .lst 列表文件的读写句柄。
+ *
+ * 旧布局按 .lst 所在目录存储相对路径，分页 / list/ 集中布局按归档根存储路径。
+ * set/mset 同时接受列表目录相对路径和完整归档路径（按布局自动换算），并要求目标文件存在；
+ * getId 只做路径换算，不要求文件存在。
+ */
+export interface PVFList {
+  readonly path: string;
+
+  /** 返回 id 到路径的映射；同一 id 有多条记录时只保留第一条。 */
+  get(): PVFListPairMap;
+  /**
+   * 按 .lst 文件顺序遍历每个条目。因为 JS 对象会把整数形式的键重排，
+   * 想按文件顺序处理时应当用 forEach 而不是遍历 get() 的结果。
+   */
+  forEach(callback: (id: string, path: string) => void): void;
+  /**
+   * 写入一条 id 到路径的记录：id 已存在则原地改写其路径，
+   * 不存在则追加到末尾。同一 id 的重复记录会合并为一条。
+   */
+  set(id: PVFListID, path: string): void;
+  /** 批量写入多个 id 到路径的记录，语义与 set 相同。 */
+  mset(entries: PVFListPairMap): void;
+  /** 删除该 id 的全部记录，返回是否真的删除了条目。 */
+  unset(id: PVFListID): boolean;
+  /** 反向查询：返回该路径注册的 id，未注册时返回 null。 */
+  getId(path: string): string | null;
+}
+
+/**
+ * 一个文件集的读写句柄。
+ *
+ * 文件集保存在用户配置目录，与当前归档无关：路径不会随归档切换而失效，
+ * 未命中当前归档的条目在侧边栏显示为失效但仍会保留。句柄按名称寻址，
+ * 因为 id 由持久化层分配，脚本看不到也不需要。
+ */
+export interface PVFFileSet {
+  readonly name: string;
+
+  /** 返回集合内的路径列表，顺序与存储一致。 */
+  getAll(): string[];
+  /**
+   * 用给定的路径列表整体替换集合内容，返回替换后的条目数。
+   * 路径会做规范化（反斜杠转正斜杠、去首尾斜杠）并去重，空路径被忽略；
+   * 不校验路径是否存在于当前归档。已存在路径会保留其名称与 id 等元数据。
+   */
+  setAll(paths: string[]): number;
+}
+
+export interface PVFNamespace {
+  /** 解析 <表号::键名> 引用（包括文本中的引用），未命中时保留原文。 */
+  getOriStrValue(reference: string): string;
+  files(): PVFFile[];
+  find(path: string): PVFFile | null;
+  glob(pattern: string): PVFFile[];
+  /**
+   * 按名称查找文件集，不存在时返回 null。名称首尾空白会被忽略；
+   * 同一脚本内新建的文件集也能查到。内置的「默认文件集」始终存在
+   * （即使从未保存过），可以直接读改。
+   */
+  fileset(name: string): PVFFileSet | null;
+  /**
+   * 新建文件集，paths 省略时创建空集合。名称已存在时报错
+   * （包括内置的「默认文件集」）；路径规则与 PVFFileSet.setAll 相同。
+   */
+  createFileset(name: string, paths?: string[]): PVFFileSet;
+  /**
+   * 在当前归档中新建文件。dataType 省略时默认为 pvf.types.script；
+   * text 是脚本可读的初始内容。路径中不存在的目录会随文件一起创建；
+   * 路径已存在时报错。
+   */
+  createFile(path: string, dataType?: PVFDataType, text?: string): PVFFile;
+  /**
+   * 复制已有文件，返回目标文件的句柄。目标路径中不存在的目录会随文件
+   * 一起创建；目标路径已存在时必须显式传入 overwrite=true，否则报错。
+   */
+  copyFile(from: string, to: string, overwrite?: boolean): PVFFile;
+  /** 删除文件本体，返回是否真的删除了条目；路径不存在时返回 false。 */
+  deleteFile(path: string): boolean;
+  /** 打开一个 .lst 列表，兼容 equipment/equipment.lst 与 list/equipment.lst 两种布局。 */
+  lst(path: string): PVFList;
+  log(...values: unknown[]): void;
+  progress(done: number, total: number, message?: string): void;
+  readonly modifiedCount: number;
+  readonly scannedCount: number;
+  readonly types: PVFTypes;
+}
+
+declare global {
+  namespace pvf {
+    function getOriStrValue(reference: string): string;
+    function files(): PVFFile[];
+    function find(path: string): PVFFile | null;
+    function glob(pattern: string): PVFFile[];
+    function fileset(name: string): PVFFileSet | null;
+    function createFileset(name: string, paths?: string[]): PVFFileSet;
+    function createFile(path: string, dataType?: PVFDataType, text?: string): PVFFile;
+    function copyFile(from: string, to: string, overwrite?: boolean): PVFFile;
+    function deleteFile(path: string): boolean;
+    function lst(path: string): PVFList;
+    function log(...values: unknown[]): void;
+    function progress(done: number, total: number, message?: string): void;
+    const modifiedCount: number;
+    const scannedCount: number;
+    const types: PVFTypes;
+  }
+}

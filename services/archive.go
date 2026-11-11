@@ -10,8 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wailsapp/wails/v3/pkg/application"
-
 	"pvfine/internal/pvf"
 	pvfversion "pvfine/internal/version"
 )
@@ -33,28 +31,6 @@ type FileRegistration struct {
 	ListFileIndex int32  `json:"listFileIndex"`
 	ListPath      string `json:"listPath"`
 	EntryPath     string `json:"entryPath"`
-}
-
-// OpenDialog 弹出文件选择框并加载归档。
-func (s *ArchiveService) OpenDialog() (*ArchiveInfo, error) {
-	path, err := application.Get().Dialog.OpenFile().
-		CanChooseFiles(true).
-		CanChooseDirectories(false).
-		AddFilter("PVF 归档", "*.pvf").
-		AddFilter("所有文件", "*").
-		SetTitle("打开 PVF 归档").
-		PromptForSingleSelection()
-	if err != nil {
-		return nil, err // 用户取消等
-	}
-	if path == "" {
-		return nil, nil
-	}
-	info, err := s.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	return &info, nil
 }
 
 // Open 加载指定路径的归档并构建目录索引。

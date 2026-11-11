@@ -8,8 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-
-	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 //go:embed builtin_skills
@@ -68,11 +66,6 @@ func (s *SkillService) ResolveDirectory(target, directory string) (string, error
 	default:
 		return "", fmt.Errorf("未知的 skill 安装位置")
 	}
-}
-
-func (s *SkillService) ChooseDirectory() (string, error) {
-	return application.Get().Dialog.OpenFile().CanChooseFiles(false).CanChooseDirectories(true).
-		CanCreateDirectories(true).SetTitle("选择 skill 安装目录或项目根目录").PromptForSingleSelection()
 }
 
 // Install skips existing skills unless overwrite is selected. Updates replace
